@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     UPLOAD_DIR: Path = BASE_DIR / "uploads"
     MAX_PHOTO_BYTES: int = 3 * 1024 * 1024
 
+    # Check-in / check-out further than this from the site (metres) is flagged "off site".
+    DEFAULT_SITE_RADIUS_M: int = 300
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
@@ -50,7 +53,8 @@ def get_settings() -> Settings:
 
 settings = get_settings()
 
-SITES = ["Jamnagar - Reliance PV Solar Gate", "Dholeara - Tata"]
+DEFAULT_SITES = ["Jamnagar - Reliance PV Solar Gate", "Dholeara - Tata"]
+SITES: list[str] = list(DEFAULT_SITES)
 TRADES = [
     "Site Supervisor", "Lead Engineer", "Electrician", "Welder", "Technician",
     "Solar Technician", "Site Technician", "Fitter", "Rigger", "Safety Officer", "Helper",

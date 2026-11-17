@@ -1,5 +1,6 @@
 import base64
 import binascii
+import math
 import re
 import uuid
 from datetime import date, datetime, timedelta
@@ -70,6 +71,15 @@ def is_late(check_in: str | None) -> bool:
     if not check_in:
         return False
     return minutes(check_in) > minutes(settings.SHIFT_START) + settings.LATE_GRACE_MINUTES
+
+
+def distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle (haversine) distance between two GPS points, in metres."""
+    r = 6_371_000
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
 
 
 def save_photo(data_url: str | None, prefix: str) -> str | None:

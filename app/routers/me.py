@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, status
 from ..database import get_db
 from ..schemas import SelfCheck
 from ..security import CurrentEmployee
-from ..services import attendance_public, employee_public, month_stats, upsert_attendance, working_days_elapsed
+from ..services import attendance_public, employee_public, locate, month_stats, upsert_attendance, working_days_elapsed
 from ..utils import month_range, now_hhmm, save_photo, today_str
 
 router = APIRouter(prefix="/api/me", tags=["employee self-service"])
@@ -18,6 +18,7 @@ async def my_dashboard(emp: CurrentEmployee):
     stats = (await month_stats([emp["_id"]], month)).get(emp["_id"], {})
     recent = [attendance_public(r) async for r in db.attendance.find({"employee_id": emp["_id"]}).sort("date", -1).limit(7)]
     pending = await db.regularizations.count_documents({"employee_id": emp["_id"], "status": "pending"})
+    pending_leaves = await db.leaves.count_documents({"employee_id": emp["_id"], "status": "pending"})
     return {
         "profile": employee_public(emp),
         "today": attendance_public(today),
@@ -35,6 +36,7 @@ async def my_dashboard(emp: CurrentEmployee):
         },
         "recent": recent,
         "pending_regularizations": pending,
+        "pending_leaves": pending_leaves,
     }
 
 
@@ -45,9 +47,11 @@ async def check_in(body: SelfCheck, emp: CurrentEmployee):
     rec = await db.attendance.find_one({"employee_id": emp["_id"], "date": day})
     if rec and rec.get("check_in") and rec.get("status") != "A":
         raise HTTPException(status.HTTP_409_CONFLICT, f"Already checked in at {rec['check_in']}")
-    selfie = save_photo(body.selfie, f"selfie_{emp['emp_code']}") if body.selfie else emp.get("photo_url")
+    selfie = save_photo(body.selfie, f"selfie_{emp['emp_code']}")
+    loc = await locate(emp["site"], body.location.latitude, body.location.longitude, body.location.accuracy)
     rec = await upsert_attendance(
-        emp, day, "P", check_in=now_hhmm(), source="self", by=emp["name"], selfie_in=selfie, keep_times=False
+        emp, day, "P", check_in=now_hhmm(), source="self", by=emp["name"],
+        selfie_in=selfie, location_in=loc, keep_times=False,
     )
     return attendance_public(rec)
 
@@ -64,9 +68,11 @@ async def check_out(body: SelfCheck, emp: CurrentEmployee):
     t = now_hhmm()
     if t <= rec["check_in"]:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Check-out time must be after check-in")
-    selfie = save_photo(body.selfie, f"selfie_out_{emp['emp_code']}") if body.selfie else None
+    selfie = save_photo(body.selfie, f"selfie_out_{emp['emp_code']}")
+    loc = await locate(emp["site"], body.location.latitude, body.location.longitude, body.location.accuracy)
     rec = await upsert_attendance(
-        emp, day, rec["status"], check_in=rec["check_in"], check_out=t, source="self", by=emp["name"], selfie_out=selfie
+        emp, day, rec["status"], check_in=rec["check_in"], check_out=t, source="self", by=emp["name"],
+        selfie_out=selfie, location_out=loc,
     )
     return attendance_public(rec)
 

@@ -124,6 +124,7 @@ async def delete_employee(employee_id: str, _: CurrentAdmin):
     deleted = {
         "attendance": (await db.attendance.delete_many({"employee_id": oid})).deleted_count,
         "regularizations": (await db.regularizations.delete_many({"employee_id": oid})).deleted_count,
+        "leaves": (await db.leaves.delete_many({"employee_id": oid})).deleted_count,
         "otps": (await db.otps.delete_many({"employee_id": oid})).deleted_count,
     }
     await db.employees.delete_one({"_id": oid})

@@ -25,6 +25,13 @@ def _check_time(v: str | None) -> str | None:
     return v
 
 
+class GeoPoint(BaseModel):
+    """Device GPS reading captured with a check-in / check-out selfie."""
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    accuracy: float | None = Field(None, ge=0, description="Reported accuracy radius in metres")
+
+
 # ---------- Auth ----------
 class AdminLogin(BaseModel):
     email: EmailStr
@@ -69,6 +76,7 @@ class EmployeeLogin(OtpRequest):
     site: str
     otp: str = Field(pattern=r"^\d{6}$")
     selfie: str = Field(description="data:image/...;base64,... check-in selfie")
+    location: GeoPoint
 
     @field_validator("site")
     @classmethod
@@ -160,7 +168,57 @@ class BulkMark(BaseModel):
 
 
 class SelfCheck(BaseModel):
-    selfie: str | None = None
+    """Self check-in / check-out: a live selfie and the device location are both required."""
+    selfie: str = Field(min_length=32, description="data:image/...;base64,... selfie")
+    location: GeoPoint
+
+
+# ---------- Sites ----------
+class SiteBase(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    address: str | None = Field(None, max_length=200)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    radius_m: int = Field(300, ge=25, le=20000)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def clean_name(cls, v):
+        return " ".join(v.split()) if isinstance(v, str) else v
+
+
+class SiteCreate(SiteBase):
+    pass
+
+
+class SiteUpdate(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=80)
+    address: str | None = Field(None, max_length=200)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    radius_m: int | None = Field(None, ge=25, le=20000)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def clean_name(cls, v):
+        return " ".join(v.split()) if isinstance(v, str) else v
+
+
+# ---------- Leave ----------
+LeaveType = Literal["casual", "sick", "emergency", "unpaid"]
+
+
+class LeaveCreate(BaseModel):
+    type: LeaveType
+    from_date: str
+    to_date: str
+    half_day: bool = False
+    reason: str = Field(min_length=5, max_length=500)
+
+
+class LeaveReview(BaseModel):
+    action: Literal["approve", "reject"]
+    remark: str | None = Field(None, max_length=300)
 
 
 # ---------- Regularization ----------

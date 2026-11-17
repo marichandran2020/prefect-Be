@@ -45,5 +45,8 @@ async def ensure_indexes() -> None:
     await d.attendance.create_index("date")
     await d.regularizations.create_index([("status", ASCENDING), ("created_at", DESCENDING)])
     await d.regularizations.create_index("employee_id")
+    await d.sites.create_index("name", unique=True)
+    await d.leaves.create_index([("status", ASCENDING), ("created_at", DESCENDING)])
+    await d.leaves.create_index([("employee_id", ASCENDING), ("from_date", ASCENDING)])
     await d.otps.create_index("expires_at", expireAfterSeconds=0)
     await d.password_resets.create_index("expires_at", expireAfterSeconds=0)

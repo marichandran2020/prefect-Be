@@ -8,6 +8,7 @@ from ..schemas import BulkMark, MarkAttendance
 from ..security import CurrentAdmin
 from ..services import attendance_public, employee_public, last_n_days, site_filter, upsert_attendance
 from ..utils import parse_date, to_oid, today_str
+from .leaves import leaves_on
 
 router = APIRouter(prefix="/api", tags=["attendance"])
 
@@ -23,7 +24,18 @@ async def _day_rows(day: str, site: str | None, q: str | None = None) -> list[di
         r["employee_id"]: r
         async for r in db.attendance.find({"date": day, "employee_id": {"$in": [e["_id"] for e in emps]}})
     }
-    return [employee_public(e) | {"attendance": attendance_public(recs.get(e["_id"]))} for e in emps]
+    on_leave = await leaves_on(day, [e["_id"] for e in emps])
+    return [
+        employee_public(e) | {"attendance": attendance_public(recs.get(e["_id"])), "on_leave": on_leave.get(e["_id"])}
+        for e in emps
+    ]
+
+
+def _off_site(att: dict | None) -> bool:
+    """True when the check-in or check-out photo was taken outside the site radius."""
+    if not att:
+        return False
+    return any((att.get(k) or {}).get("within_site") is False for k in ("location_in", "location_out"))
 
 
 def _kpis(rows: list[dict]) -> dict:
@@ -32,10 +44,13 @@ def _kpis(rows: list[dict]) -> dict:
     present, absent, half = st.count("P"), st.count("A"), st.count("HD")
     late = sum(1 for r in rows if r["attendance"] and r["attendance"]["late"])
     pf = sum(1 for r in rows if r["pf_status"] == "Verified")
+    off_site = sum(1 for r in rows if _off_site(r["attendance"]))
+    on_leave = sum(1 for r in rows if r.get("on_leave"))
     rate = round((present + half * 0.5) / total * 100) if total else 0
     return {
         "total": total, "present": present, "absent": absent, "half_day": half,
         "unmarked": st.count(None), "late": late, "pf_verified": pf, "attendance_rate": rate,
+        "off_site": off_site, "on_leave": on_leave,
     }
 
 
@@ -103,6 +118,7 @@ async def overview(_: CurrentAdmin, site: str | None = None):
     )[:8]
     pending_regs = await db.regularizations.count_documents({"status": "pending"})
     pending_admins = await db.admins.count_documents({"status": "pending"})
+    pending_leaves = await db.leaves.count_documents({"status": "pending"})
 
     return {
         "date": day,
@@ -112,4 +128,5 @@ async def overview(_: CurrentAdmin, site: str | None = None):
         "recent_checkins": checkins,
         "pending_regularizations": pending_regs,
         "pending_admins": pending_admins,
+        "pending_leaves": pending_leaves,
     }

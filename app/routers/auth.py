@@ -11,7 +11,7 @@ from ..config import settings
 from ..database import get_db
 from ..schemas import AdminLogin, AdminSignup, EmployeeLogin, ForgotPassword, OtpRequest, ResetPassword, TokenOut
 from ..security import bearer, create_access_token, decode_token, hash_password, verify_password
-from ..services import attendance_public, employee_public, upsert_attendance
+from ..services import attendance_public, employee_public, locate, upsert_attendance
 from ..utils import now, now_hhmm, save_photo, to_oid, today_str
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -144,8 +144,10 @@ async def employee_login(body: EmployeeLogin):
     day = today_str()
     rec = await db.attendance.find_one({"employee_id": emp["_id"], "date": day})
     if not rec or rec.get("status") == "A" or not rec.get("check_in"):
+        loc = await locate(emp["site"], body.location.latitude, body.location.longitude, body.location.accuracy)
         rec = await upsert_attendance(
-            emp, day, "P", check_in=now_hhmm(), source="self", by=emp["name"], selfie_in=selfie_url, keep_times=False,
+            emp, day, "P", check_in=now_hhmm(), source="self", by=emp["name"],
+            selfie_in=selfie_url, location_in=loc, keep_times=False,
         )
 
     token, exp = create_access_token(str(emp["_id"]), "employee")

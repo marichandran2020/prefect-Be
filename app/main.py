@@ -7,8 +7,9 @@ from fastapi.staticfiles import StaticFiles
 
 from . import database
 from .config import SITES, TRADES, settings
-from .routers import admins, attendance, auth, employees, me, regularizations, reports
+from .routers import admins, attendance, auth, employees, leaves, me, regularizations, reports, sites
 from .seed import ensure_default_admin
+from .services import refresh_sites, seed_sites
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s: %(message)s")
 
@@ -17,6 +18,8 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s: %(messa
 async def lifespan(_: FastAPI):
     await database.connect()
     await ensure_default_admin()
+    await seed_sites()
+    await refresh_sites()
     yield
     await database.close()
 
@@ -34,7 +37,7 @@ app.add_middleware(
 settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
-for r in (auth, employees, attendance, regularizations, me, reports, admins):
+for r in (auth, employees, attendance, regularizations, leaves, sites, me, reports, admins):
     app.include_router(r.router)
 
 
