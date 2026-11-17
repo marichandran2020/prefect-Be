@@ -45,22 +45,42 @@ async def apply_regularization(body: RegularizationCreate, emp: CurrentEmployee)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You cannot regularize a future date")
     if (today - day).days > MAX_BACKDATE_DAYS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Requests are allowed only for the last {MAX_BACKDATE_DAYS} days")
-    if body.requested_status != "A" and not body.check_in:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Check-in time is required for Present / Half-Day")
-    if body.check_in and body.check_out and body.check_out <= body.check_in:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Check-out must be after check-in")
     if await db.regularizations.find_one({"employee_id": emp["_id"], "date": day.isoformat(), "status": "pending"}):
         raise HTTPException(status.HTTP_409_CONFLICT, "A pending request already exists for this date")
 
     current = await db.attendance.find_one({"employee_id": emp["_id"], "date": day.isoformat()})
+    punch, check_in, check_out = body.punch, body.check_in, body.check_out
+    if body.requested_status == "A":
+        punch, check_in, check_out = "both", None, None
+    elif punch == "in":
+        check_out = None
+        if not check_in:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Please enter the correct check-in time")
+        existing_out = current.get("check_out") if current else None
+        if existing_out and existing_out <= check_in:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Check-in must be before your recorded check-out")
+    elif punch == "out":
+        check_in = None
+        if not check_out:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Please enter the correct check-out time")
+        existing_in = current.get("check_in") if current else None
+        if existing_in and check_out <= existing_in:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Check-out must be after your recorded check-in")
+    else:
+        if not check_in:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Check-in time is required for Present / Half-Day")
+        if check_out and check_out <= check_in:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Check-out must be after check-in")
+
     doc = {
         "employee_id": emp["_id"],
         "site": emp["site"],
         "date": day.isoformat(),
         "type": body.type,
         "requested_status": body.requested_status,
-        "check_in": body.check_in,
-        "check_out": body.check_out,
+        "punch": punch,
+        "check_in": check_in,
+        "check_out": check_out,
         "reason": body.reason.strip(),
         "original": {
             "status": current.get("status") if current else None,
@@ -116,9 +136,13 @@ async def review_regularization(reg_id: str, body: RegularizationReview, admin: 
         emp = await db.employees.find_one({"_id": reg["employee_id"]})
         if not emp:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee no longer exists")
+        # "in" / "out" requests only touch that one time; the other recorded punch is kept as-is.
+        punch = reg.get("punch", "both")
         await upsert_attendance(
-            emp, reg["date"], reg["requested_status"], check_in=reg.get("check_in"), check_out=reg.get("check_out"),
-            source="regularization", by=admin["name"], keep_times=False,
+            emp, reg["date"], reg["requested_status"],
+            check_in=reg.get("check_in") if punch != "out" else None,
+            check_out=reg.get("check_out") if punch != "in" else None,
+            source="regularization", by=admin["name"], keep_times=punch != "both",
         )
 
     new_status = "approved" if body.action == "approve" else "rejected"

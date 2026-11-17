@@ -168,6 +168,8 @@ class RegularizationCreate(BaseModel):
     date: str
     type: Literal["missed_punch", "wrong_status", "late_arrival", "early_exit", "on_duty"]
     requested_status: AttendanceStatus
+    # Which punch the employee wants corrected: only that time is changed on approval.
+    punch: Literal["in", "out", "both"] = "both"
     check_in: str | None = None
     check_out: str | None = None
     reason: str = Field(min_length=5, max_length=500)
